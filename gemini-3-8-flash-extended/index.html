@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>雨夜のコンビニ - Anime Rainy Night Konbini Diorama</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #060911;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #webgl-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      outline: none;
+      cursor: grab;
+    }
+    #webgl-canvas:active {
+      cursor: grabbing;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <canvas id="webgl-canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('webgl-canvas');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.028);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      antialias: true,
+      powerPreference: "high-performance"
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+
+    const camera = new THREE.PerspectiveCamera(36, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(15, 11, 16);
+
+    let controls = null;
+    if (typeof THREE.OrbitControls !== 'undefined') {
+      controls = new THREE.OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.target.set(-0.5, 1.8, -0.4);
+      controls.minDistance = 6;
+      controls.maxDistance = 28;
+      controls.maxPolarAngle = Math.PI * 0.485;
+      controls.update();
+    } else {
+      // Lightweight built-in orbit handler in case external script is blocked
+      let isDragging = false;
+      let prevMouse = { x: 0, y: 0 };
+      let spherical = { radius: 24, theta: 0.8, phi: 1.1 };
+      const target = new THREE.Vector3(-0.5, 1.8, -0.4);
+
+      function updateFallbackCamera() {
+        camera.position.x = target.x + spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
+        camera.position.y = target.y + spherical.radius * Math.cos(spherical.phi);
+        camera.position.z = target.z + spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+        camera.lookAt(target);
+      }
+      updateFallbackCamera();
+
+      canvas.addEventListener('mousedown', e => {
+        isDragging = true;
+        prevMouse = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('mouseup', () => { isDragging = false; });
+      window.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        prevMouse = { x: e.clientX, y: e.clientY };
+        spherical.theta -= dx * 0.007;
+        spherical.phi = Math.max(0.2, Math.min(Math.PI * 0.48, spherical.phi - dy * 0.007));
+        updateFallbackCamera();
+      });
+      canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        spherical.radius = Math.max(6, Math.min(28, spherical.radius + e.deltaY * 0.015));
+        updateFallbackCamera();
+      }, { passive: false });
+    }
+
+    function createToonRamp() {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 1;
+      const ctx = c.getContext('2d');
+      const colors = ['#2e3748', '#55637d', '#9eb2d1', '#ffffff'];
+      colors.forEach((col, i) => {
+        ctx.fillStyle = col;
+        ctx.fillRect(i, 0, 1, 1);
+      });
+      const tex = new THREE.CanvasTexture(c);
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      return tex;
+    }
+    const toonRamp = createToonRamp();
+
+    function toonMat(colorHex, extra = {}) {
+      return new THREE.MeshToonMaterial({
+        color: colorHex,
+        gradientMap: toonRamp,
+        ...extra
+      });
+    }
+
+    function createRoadTexture() {
+      const c = document.createElement('canvas');
+      c.width = 1024;
+      c.height = 1024;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#141820';
+      ctx.fillRect(0, 0, 1024, 1024);
+
+      // Rain grain & subtle asphalt noise
+      for (let i = 0; i < 5000; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#1c222e' : '#0e1218';
+        ctx.fillRect(Math.random() * 1024, Math.random() * 1024, 2, 2);
+      }
+
+      // Yellow stop line
+      ctx.fillStyle = '#e5a522';
+      ctx.fillRect(80, 520, 864, 24);
+
+      // Zebra crosswalk stripes
+      ctx.fillStyle = '#e2e8f0';
+      for (let i = 0; i < 9; i++) {
+        ctx.fillRect(100 + i * 94, 600, 56, 300);
+      }
+
+      // "止まれ" Kanji stop marking
+      ctx.save();
+      ctx.translate(512, 380);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 88px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('止 ま れ', 0, 0);
+      ctx.restore();
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      return tex;
+    }
+
+    function createSidewalkTexture() {
+      const c = document.createElement('canvas');
+      c.width = 1024;
+      c.height = 1024;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#424855';
+      ctx.fillRect(0, 0, 1024, 1024);
+
+      // Pavement tile grid
+      ctx.strokeStyle = '#2d333e';
+      ctx.lineWidth = 4;
+      const step = 64;
+      for (let x = 0; x <= 1024; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 1024);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= 1024; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(1024, y);
+        ctx.stroke();
+      }
+
+      // Yellow tactile braille blocks (Tenji block strips)
+      ctx.fillStyle = '#d49b24';
+      ctx.fillRect(720, 0, 96, 1024);
+      ctx.fillStyle = '#b88114';
+      for (let y = 16; y < 1024; y += 32) {
+        for (let x = 736; x < 816; x += 26) {
+          ctx.beginPath();
+          ctx.arc(x, y, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      return tex;
+    }
+
+    function createKonbiniSignTexture() {
+      const c = document.createElement('canvas');
+      c.width = 1024;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+
+      // Iconic 3-stripe Japanese convenience store header
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 1024, 256);
+      ctx.fillStyle = '#008744';
+      ctx.fillRect(0, 0, 1024, 52);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 52, 1024, 152);
+      ctx.fillStyle = '#ee6b1d';
+      ctx.fillRect(0, 204, 1024, 52);
+
+      // Store title logo
+      ctx.fillStyle = '#008744';
+      ctx.font = '900 86px "Arial Black", Impact, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('DAILY 24', 48, 152);
+
+      ctx.fillStyle = '#1c2434';
+      ctx.font = 'bold 36px "Hiragino Sans", "Meiryo", sans-serif';
+      ctx.fillText('デイリーコンビニ', 480, 120);
+
+      ctx.fillStyle = '#d63031';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('年中無休・お酒・たばこ・銀行ATM', 480, 168);
+
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createVendingTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 1024;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#0e3d73';
+      ctx.fillRect(0, 0, 512, 1024);
+
+      // Top illuminated header
+      ctx.fillStyle = '#e8f2fe';
+      ctx.fillRect(32, 32, 448, 96);
+      ctx.fillStyle = '#0058b0';
+      ctx.font = 'bold 44px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('COLD & HOT', 256, 98);
+
+      // Showcase display window
+      ctx.fillStyle = '#081729';
+      ctx.fillRect(32, 150, 448, 490);
+
+      const colors = ['#2ea043', '#e03e3e', '#f5a623', '#2f80ed', '#8e44ad', '#16a085', '#d35400', '#27ae60'];
+      for (let r = 0; r < 3; r++) {
+        for (let col = 0; col < 8; col++) {
+          const x = 48 + col * 52;
+          const y = 175 + r * 152;
+          ctx.fillStyle = colors[(r * 8 + col) % colors.length];
+          ctx.fillRect(x, y, 36, 82);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(x + 6, y + 4, 24, 8);
+
+          // Hot/Cold button tag
+          ctx.fillStyle = r === 2 && col > 4 ? '#d63031' : '#0984e3';
+          ctx.fillRect(x + 2, y + 94, 32, 16);
+          ctx.fillStyle = '#dfe6e9';
+          ctx.beginPath();
+          ctx.arc(x + 18, y + 122, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Coin slot and price tag
+      ctx.fillStyle = '#1c2833';
+      ctx.fillRect(360, 680, 120, 110);
+      ctx.fillStyle = '#2ecc71';
+      ctx.font = 'bold 26px monospace';
+      ctx.fillText('¥140', 420, 725);
+
+      // Retrieval compartment door
+      ctx.fillStyle = '#091522';
+      ctx.fillRect(48, 830, 416, 150);
+      ctx.fillStyle = '#1c2833';
+      ctx.fillRect(64, 846, 384, 118);
+
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createShelvesTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#262c37';
+      ctx.fillRect(0, 0, 512, 512);
+
+      const colors = ['#f39c12', '#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#1abc9c', '#f1c40f'];
+      for (let shelf = 0; shelf < 4; shelf++) {
+        const y = shelf * 128;
+        ctx.fillStyle = '#bdc3c7';
+        ctx.fillRect(0, y + 116, 512, 12);
+
+        for (let i = 0; i < 14; i++) {
+          ctx.fillStyle = colors[(shelf * 14 + i) % colors.length];
+          const h = 52 + (i % 3) * 14;
+          ctx.fillRect(12 + i * 35, y + 116 - h, 26, h);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(12 + i * 35, y + 116 - h + 10, 26, 8);
+        }
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createFridgeTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = '#f5f8fc';
+      ctx.fillRect(0, 0, 512, 512);
+
+      const bottleColors = ['#27ae60', '#f39c12', '#2980b9', '#c0392b', '#8e44ad', '#16a085'];
+      for (let shelf = 0; shelf < 4; shelf++) {
+        const y = 20 + shelf * 120;
+        ctx.fillStyle = '#bdc3c7';
+        ctx.fillRect(0, y + 90, 512, 8);
+
+        for (let i = 0; i < 16; i++) {
+          ctx.fillStyle = bottleColors[(shelf * 5 + i) % bottleColors.length];
+          ctx.fillRect(14 + i * 31, y + 15, 20, 75);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(16 + i * 31, y + 4, 16, 12);
+        }
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createMagazineTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#1e242d';
+      ctx.fillRect(0, 0, 512, 256);
+
+      const covers = ['#ff7675', '#74b9ff', '#55efc4', '#ffeaa7', '#a29bfe', '#fd79a8'];
+      for (let i = 0; i < 6; i++) {
+        const x = 12 + i * 82;
+        ctx.fillStyle = covers[i];
+        ctx.fillRect(x, 20, 72, 210);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 8, 30, 56, 38);
+        ctx.fillStyle = '#2d3436';
+        ctx.beginPath();
+        ctx.arc(x + 36, 118, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ff4757';
+        ctx.fillRect(x + 8, 172, 56, 35);
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createBulletinTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#9b7452';
+      ctx.fillRect(0, 0, 512, 256);
+
+      ctx.fillStyle = '#f7f8fa';
+      ctx.fillRect(20, 20, 140, 210);
+      ctx.fillStyle = '#e84118';
+      ctx.fillRect(28, 30, 124, 28);
+      ctx.fillStyle = '#2f3640';
+      ctx.fillRect(32, 70, 116, 8);
+      ctx.fillRect(32, 85, 90, 8);
+
+      ctx.fillStyle = '#fbc531';
+      ctx.fillRect(180, 25, 150, 200);
+      ctx.fillStyle = '#8c7ae6';
+      ctx.beginPath();
+      ctx.arc(255, 100, 36, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(350, 35, 140, 185);
+      ctx.fillStyle = '#44bd32';
+      ctx.fillRect(360, 45, 120, 30);
+      ctx.fillStyle = '#2f3640';
+      for (let y = 90; y < 190; y += 18) {
+        ctx.fillRect(365, y, 100, 6);
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function createWindowDropsTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, 512, 512);
+
+      ctx.fillStyle = 'rgba(230, 242, 255, 0.42)';
+      for (let i = 0; i < 400; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const len = 4 + Math.random() * 20;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 1.2, len, -0.08, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    const roadTex = createRoadTexture();
+    const sidewalkTex = createSidewalkTexture();
+    const konbiniSignTex = createKonbiniSignTexture();
+    const vendingTex = createVendingTexture();
+    const shelvesTex = createShelvesTexture();
+    const fridgeTex = createFridgeTexture();
+    const magazineTex = createMagazineTexture();
+    const bulletinTex = createBulletinTexture();
+    const windowDropsTex = createWindowDropsTexture();
+
+    const rootDiorama = new THREE.Group();
+    scene.add(rootDiorama);
+
+    const pedestalMat = toonMat(0x111520);
+    const pedestalBase = new THREE.Mesh(
+      new THREE.BoxGeometry(16.4, 1.8, 16.4),
+      pedestalMat
+    );
+    pedestalBase.position.y = -0.9;
+    pedestalBase.receiveShadow = true;
+    rootDiorama.add(pedestalBase);
+
+    const rimMat = toonMat(0x1d2332);
+    const pedestalRim = new THREE.Mesh(
+      new THREE.BoxGeometry(16.7, 0.2, 16.7),
+      rimMat
+    );
+    pedestalRim.position.y = -0.1;
+    rootDiorama.add(pedestalRim);
+
+    const roadMat = new THREE.MeshStandardMaterial({
+      map: roadTex,
+      roughness: 0.16,
+      metalness: 0.2,
+      color: 0x8a94a6
+    });
+    const roadMesh = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), roadMat);
+    roadMesh.rotation.x = -Math.PI / 2;
+    roadMesh.position.y = 0.01;
+    roadMesh.receiveShadow = true;
+    rootDiorama.add(roadMesh);
+
+    const sidewalkMat = new THREE.MeshStandardMaterial({
+      map: sidewalkTex,
+      roughness: 0.65,
+      metalness: 0.05,
+      color: 0x939db2
+    });
+    const sidewalkMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(10.8, 0.24, 10.8),
+      sidewalkMat
+    );
+    sidewalkMesh.position.set(-2.6, 0.12, -2.6);
+    sidewalkMesh.receiveShadow = true;
+    rootDiorama.add(sidewalkMesh);
+
+    // Sidewalk curb stones
+    const curbMat = toonMat(0x353b49);
+    const curbFront = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.26, 0.22), curbMat);
+    curbFront.position.set(-2.6, 0.13, 2.85);
+    rootDiorama.add(curbFront);
+
+    const curbSide = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.26, 10.8), curbMat);
+    curbSide.position.set(2.85, 0.13, -2.6);
+    rootDiorama.add(curbSide);
+
+    // Storm drain grates along street gutter
+    const grateMat = toonMat(0x181c24);
+    for (let i = 0; i < 3; i++) {
+      const grate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 0.4), grateMat);
+      grate.position.set(-6 + i * 4, 0.02, 3.2);
+      rootDiorama.add(grate);
+    }
+
+    const puddles = [];
+    const puddleData = [
+      { x: -1.5, z: 5.2, r: 1.4 },
+      { x: 4.8, z: 1.0, r: 1.2 },
+      { x: -5.2, z: 4.8, r: 1.1 },
+      { x: 1.8, z: 5.6, r: 0.9 },
+      { x: -0.8, z: 1.5, r: 0.7 }
+    ];
+
+    const rippleMat = new THREE.MeshBasicMaterial({
+      color: 0xa8ccff,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false
+    });
+
+    puddleData.forEach((p, idx) => {
+      const puddleMesh = new THREE.Mesh(
+        new THREE.CircleGeometry(p.r, 24),
+        new THREE.MeshStandardMaterial({
+          color: 0x0a0f18,
+          roughness: 0.04,
+          metalness: 0.38,
+          transparent: true,
+          opacity: 0.88
+        })
+      );
+      puddleMesh.rotation.x = -Math.PI / 2;
+      puddleMesh.position.set(p.x, 0.03, p.z);
+      rootDiorama.add(puddleMesh);
+
+      const ringGeom = new THREE.RingGeometry(0.06, 0.14, 24);
+      const ringMesh = new THREE.Mesh(ringGeom, rippleMat.clone());
+      ringMesh.rotation.x = -Math.PI / 2;
+      ringMesh.position.set(p.x, 0.04, p.z);
+      rootDiorama.add(ringMesh);
+
+      puddles.push({
+        mesh: ringMesh,
+        maxRadius: p.r * 0.92,
+        progress: (idx * 0.33) % 1.0,
+        speed: 0.36 + Math.random() * 0.18
+      });
+    });
+
+    const storeGroup = new THREE.Group();
+    rootDiorama.add(storeGroup);
+
+    const storeWallMat = toonMat(0xede9e1);
+    const darkFrameMat = toonMat(0x1b202a);
+    const storeRoofMat = toonMat(0x2f3643);
+
+    const STORE_W = 7.6;
+    const STORE_H = 4.2;
+    const STORE_D = 6.4;
+    const STORE_X = -3.8;
+    const STORE_Z = -3.4;
+
+    // Interior floor
+    const interiorFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(STORE_W - 0.2, STORE_D - 0.2),
+      toonMat(0xede9df)
+    );
+    interiorFloor.rotation.x = -Math.PI / 2;
+    interiorFloor.position.set(STORE_X, 0.25, STORE_Z);
+    interiorFloor.receiveShadow = true;
+    storeGroup.add(interiorFloor);
+
+    // North back wall
+    const backWall = new THREE.Mesh(
+      new THREE.BoxGeometry(STORE_W, STORE_H, 0.25),
+      storeWallMat
+    );
+    backWall.position.set(STORE_X, STORE_H / 2 + 0.24, STORE_Z - STORE_D / 2);
+    backWall.castShadow = true;
+    storeGroup.add(backWall);
+
+    // West left wall
+    const leftWall = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, STORE_H, STORE_D),
+      storeWallMat
+    );
+    leftWall.position.set(STORE_X - STORE_W / 2, STORE_H / 2 + 0.24, STORE_Z);
+    leftWall.castShadow = true;
+    storeGroup.add(leftWall);
+
+    // Store ceiling roof
+    const ceiling = new THREE.Mesh(
+      new THREE.BoxGeometry(STORE_W + 0.2, 0.3, STORE_D + 0.2),
+      storeRoofMat
+    );
+    ceiling.position.set(STORE_X, STORE_H + 0.3, STORE_Z);
+    ceiling.castShadow = true;
+    storeGroup.add(ceiling);
+
+    // Corner pillar post
+    const cornerPillar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, STORE_H, 0.35),
+      darkFrameMat
+    );
+    cornerPillar.position.set(STORE_X + STORE_W / 2, STORE_H / 2 + 0.24, STORE_Z + STORE_D / 2);
+    storeGroup.add(cornerPillar);
+
+    // Rain glass windows
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x9fe3f7,
+      transparent: true,
+      opacity: 0.36,
+      roughness: 0.1,
+      metalness: 0.1,
+      map: windowDropsTex
+    });
+
+    // Front display window (South)
+    const frontWindowMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(4.2, STORE_H - 1.2, 0.06),
+      glassMat
+    );
+    frontWindowMesh.position.set(STORE_X - 1.4, (STORE_H - 1.2) / 2 + 0.24, STORE_Z + STORE_D / 2);
+    storeGroup.add(frontWindowMesh);
+
+    // Window sill & beam
+    const windowBase = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.3, 0.2), darkFrameMat);
+    windowBase.position.set(STORE_X - 1.4, 0.35, STORE_Z + STORE_D / 2);
+    storeGroup.add(windowBase);
+
+    const windowTop = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.25, 0.2), darkFrameMat);
+    windowTop.position.set(STORE_X - 1.4, STORE_H - 0.85, STORE_Z + STORE_D / 2);
+    storeGroup.add(windowTop);
+
+    // East side window
+    const rightWindowMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, STORE_H - 1.2, STORE_D - 0.8),
+      glassMat
+    );
+    rightWindowMesh.position.set(STORE_X + STORE_W / 2, (STORE_H - 1.2) / 2 + 0.24, STORE_Z);
+    storeGroup.add(rightWindowMesh);
+
+    const doorGroup = new THREE.Group();
+    doorGroup.position.set(STORE_X + 1.85, 0.24, STORE_Z + STORE_D / 2);
+    storeGroup.add(doorGroup);
+
+    const sensorBox = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.25, 0.35), darkFrameMat);
+    sensorBox.position.set(0, 3.1, 0);
+    doorGroup.add(sensorBox);
+
+    const welcomeMat = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 0.04, 1.2),
+      toonMat(0xb22424)
+    );
+    welcomeMat.position.set(0, 0.02, 0.7);
+    doorGroup.add(welcomeMat);
+
+    // Left door leaf
+    const doorL = new THREE.Group();
+    const doorLMesh = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.9, 0.05), glassMat);
+    doorLMesh.position.y = 1.45;
+    doorL.add(doorLMesh);
+    doorL.position.x = -0.55;
+    doorGroup.add(doorL);
+
+    // Right door leaf
+    const doorR = new THREE.Group();
+    const doorRMesh = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.9, 0.05), glassMat);
+    doorRMesh.position.y = 1.45;
+    doorR.add(doorRMesh);
+    doorR.position.x = 0.55;
+    doorGroup.add(doorR);
+
+    // Roof awning overhang
+    const awningMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(STORE_W + 1.4, 0.22, 1.6),
+      storeRoofMat
+    );
+    awningMesh.position.set(STORE_X, STORE_H + 0.1, STORE_Z + STORE_D / 2 + 0.7);
+    awningMesh.castShadow = true;
+    storeGroup.add(awningMesh);
+
+    // Glowing illuminated fascia banner sign (Front & Side)
+    const signMat = new THREE.MeshBasicMaterial({
+      map: konbiniSignTex
+    });
+    const frontSign = new THREE.Mesh(
+      new THREE.BoxGeometry(STORE_W + 1.2, 0.9, 0.2),
+      signMat
+    );
+    frontSign.position.set(STORE_X, STORE_H - 0.4, STORE_Z + STORE_D / 2 + 0.12);
+    storeGroup.add(frontSign);
+
+    const sideSign = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.9, STORE_D + 0.4),
+      signMat
+    );
+    sideSign.position.set(STORE_X + STORE_W / 2 + 0.12, STORE_H - 0.4, STORE_Z);
+    storeGroup.add(sideSign);
+
+    // Canopy under-eave spot downlights
+    for (let i = -1; i <= 1; i += 2) {
+      const downLight = new THREE.PointLight(0xffecc2, 0.9, 5, 2);
+      downLight.position.set(STORE_X + i * 2.2, STORE_H - 0.1, STORE_Z + STORE_D / 2 + 0.6);
+      storeGroup.add(downLight);
+    }
+
+    const interiorGroup = new THREE.Group();
+    storeGroup.add(interiorGroup);
+
+    // 1. Backlit beverage cooler wall
+    const fridgeGroup = new THREE.Group();
+    fridgeGroup.position.set(STORE_X - 0.6, 1.8, STORE_Z - STORE_D / 2 + 0.35);
+    interiorGroup.add(fridgeGroup);
+
+    const fridgeBacking = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 2.8, 0.2),
+      new THREE.MeshBasicMaterial({ map: fridgeTex, color: 0xffffff })
+    );
+    fridgeGroup.add(fridgeBacking);
+
+    const fridgeGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(5.2, 2.8, 0.05),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3,
+        roughness: 0.1
+      })
+    );
+    fridgeGlass.position.z = 0.12;
+    fridgeGroup.add(fridgeGlass);
+
+    const fridgeLight = new THREE.PointLight(0xdcf4ff, 1.1, 4.5);
+    fridgeLight.position.set(0, 0, 0.4);
+    fridgeGroup.add(fridgeLight);
+
+    // 2. Center aisle gondolas (double-sided shelves)
+    function createGondola(gx, gz) {
+      const g = new THREE.Group();
+      g.position.set(gx, 0.24, gz);
+
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.0, 0.9), toonMat(0xd8dbe2));
+      frame.position.y = 1.0;
+      g.add(frame);
+
+      const shelfDecalMat = new THREE.MeshToonMaterial({ map: shelvesTex });
+      const sideA = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 1.8), shelfDecalMat);
+      sideA.position.set(0, 1.0, 0.46);
+      g.add(sideA);
+
+      const sideB = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 1.8), shelfDecalMat);
+      sideB.position.set(0, 1.0, -0.46);
+      sideB.rotation.y = Math.PI;
+      g.add(sideB);
+
+      const catSign = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 0.08), toonMat(0x27ae60));
+      catSign.position.set(0, 2.25, 0);
+      g.add(catSign);
+
+      return g;
+    }
+
+    const gondola1 = createGondola(STORE_X - 1.2, STORE_Z - 1.4);
+    const gondola2 = createGondola(STORE_X - 1.2, STORE_Z + 0.4);
+    interiorGroup.add(gondola1);
+    interiorGroup.add(gondola2);
+
+    // 3. Checkout counter station
+    const counterGroup = new THREE.Group();
+    counterGroup.position.set(STORE_X + 2.4, 0.24, STORE_Z - 0.4);
+    interiorGroup.add(counterGroup);
+
+    const counterBody = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 1.15, 3.2),
+      toonMat(0x564436)
+    );
+    counterBody.position.y = 0.575;
+    counterGroup.add(counterBody);
+
+    const counterTop = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.1, 3.3),
+      toonMat(0xf4ede2)
+    );
+    counterTop.position.y = 1.17;
+    counterGroup.add(counterTop);
+
+    // POS Touch Register
+    const posScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.3, 0.35),
+      toonMat(0x22262f)
+    );
+    posScreen.position.set(-0.1, 1.4, 0.8);
+    counterGroup.add(posScreen);
+
+    const posGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.26, 0.22),
+      new THREE.MeshBasicMaterial({ color: 0x64d2ff })
+    );
+    posGlow.position.set(-0.28, 1.45, 0.8);
+    posGlow.rotation.y = -Math.PI / 2;
+    counterGroup.add(posGlow);
+
+    // Steamed bun / fried chicken warmer cabinet
+    const warmerCase = new THREE.Mesh(
+      new THREE.BoxGeometry(0.65, 0.7, 0.8),
+      new THREE.MeshStandardMaterial({
+        color: 0xffe8ba,
+        transparent: true,
+        opacity: 0.55,
+        roughness: 0.2
+      })
+    );
+    warmerCase.position.set(0, 1.55, -0.2);
+    counterGroup.add(warmerCase);
+
+    const warmerLight = new THREE.PointLight(0xffa126, 1.4, 2.5);
+    warmerLight.position.set(0, 1.55, -0.2);
+    counterGroup.add(warmerLight);
+
+    // Steaming oden vat
+    const odenCooker = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.35, 0.65),
+      toonMat(0xbdc3c7)
+    );
+    odenCooker.position.set(0, 1.35, -1.05);
+    counterGroup.add(odenCooker);
+
+    // Konbini drip coffee machine
+    const coffeeMachine = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.85, 0.45),
+      toonMat(0x191e24)
+    );
+    coffeeMachine.position.set(0.1, 1.6, 1.3);
+    counterGroup.add(coffeeMachine);
+
+    // 4. Magazine stand by front window
+    const magStand = new THREE.Group();
+    magStand.position.set(STORE_X - 2.0, 0.24, STORE_Z + STORE_D / 2 - 0.65);
+    interiorGroup.add(magStand);
+
+    const rackFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 0.9, 0.5),
+      toonMat(0x4a5264)
+    );
+    rackFrame.position.y = 0.45;
+    magStand.add(rackFrame);
+
+    const magDisplay = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.3, 0.8),
+      new THREE.MeshBasicMaterial({ map: magazineTex })
+    );
+    magDisplay.position.set(0, 0.65, 0.26);
+    magDisplay.rotation.x = -0.25;
+    magStand.add(magDisplay);
+
+    // 5. Fluorescent ceiling light panels & core warm ambient radiance
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const fixture = new THREE.Mesh(
+          new THREE.BoxGeometry(1.8, 0.08, 0.3),
+          new THREE.MeshBasicMaterial({ color: 0xfffaee })
+        );
+        fixture.position.set(STORE_X + i * 2.0, STORE_H + 0.12, STORE_Z + j * 1.8);
+        interiorGroup.add(fixture);
+      }
+    }
+
+    const interiorCoreLight = new THREE.PointLight(0xffdf99, 2.3, 10.5, 1.4);
+    interiorCoreLight.position.set(STORE_X, 2.6, STORE_Z);
+    interiorCoreLight.castShadow = true;
+    interiorGroup.add(interiorCoreLight);
+
+    const propsGroup = new THREE.Group();
+    rootDiorama.add(propsGroup);
+
+    // 1. Japanese drink vending machine & recycle bin
+    const vendingGroup = new THREE.Group();
+    vendingGroup.position.set(2.0, 0.24, -1.8);
+    vendingGroup.rotation.y = -Math.PI / 2;
+    propsGroup.add(vendingGroup);
+
+    const vendingBody = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 2.6, 0.9),
+      toonMat(0x0e3d73)
+    );
+    vendingBody.position.y = 1.3;
+    vendingBody.castShadow = true;
+    vendingGroup.add(vendingBody);
+
+    const vendingFace = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.3, 2.5),
+      new THREE.MeshBasicMaterial({ map: vendingTex })
+    );
+    vendingFace.position.set(0, 1.3, 0.46);
+    vendingGroup.add(vendingFace);
+
+    const vendingGlow = new THREE.PointLight(0x70c5ff, 1.5, 4.5, 1.8);
+    vendingGlow.position.set(0, 1.5, 0.8);
+    vendingGroup.add(vendingGlow);
+
+    const recycleBin = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 1.1, 0.6),
+      toonMat(0x008443)
+    );
+    recycleBin.position.set(1.15, 0.55, 0.05);
+    recycleBin.castShadow = true;
+    vendingGroup.add(recycleBin);
+
+    // 2. Vinyl umbrellas in stand
+    const umbrellaStand = new THREE.Group();
+    umbrellaStand.position.set(STORE_X + 0.35, 0.24, STORE_Z + STORE_D / 2 + 0.6);
+    propsGroup.add(umbrellaStand);
+
+    const standBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 0.65, 16, 1, true),
+      toonMat(0x718093)
+    );
+    standBase.position.y = 0.325;
+    umbrellaStand.add(standBase);
+
+    const vinylMat = new THREE.MeshStandardMaterial({
+      color: 0xeaf2f8,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.15
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2;
+      const umbrella = new THREE.Group();
+      umbrella.position.set(Math.cos(angle) * 0.12, 0.4, Math.sin(angle) * 0.12);
+      umbrella.rotation.z = 0.14 * Math.sin(i);
+      umbrella.rotation.x = 0.14 * Math.cos(i);
+
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.045, 0.9, 8), vinylMat);
+      shaft.position.y = 0.3;
+      umbrella.add(shaft);
+
+      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 8, 16, Math.PI), toonMat(0xffffff));
+      handle.position.y = 0.8;
+      handle.rotation.z = Math.PI;
+      umbrella.add(handle);
+
+      umbrellaStand.add(umbrella);
+    }
+
+    // 3. Mamachari commuter bicycle
+    const bikeGroup = new THREE.Group();
+    bikeGroup.position.set(-6.8, 0.24, -0.6);
+    bikeGroup.rotation.y = 0.2;
+    propsGroup.add(bikeGroup);
+
+    const bikeFrameMat = toonMat(0x2d3436);
+    const bikeMetalMat = toonMat(0xa4b0be);
+
+    const frontWheel = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.03, 8, 24), bikeMetalMat);
+    frontWheel.position.set(0.7, 0.38, 0);
+    bikeGroup.add(frontWheel);
+
+    const backWheel = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.03, 8, 24), bikeMetalMat);
+    backWheel.position.set(-0.7, 0.38, 0);
+    bikeGroup.add(backWheel);
+
+    const bikeCrossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.2), bikeFrameMat);
+    bikeCrossbar.rotation.z = -1.1;
+    bikeCrossbar.position.set(0.0, 0.55, 0);
+    bikeGroup.add(bikeCrossbar);
+
+    const handlebar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.6), bikeMetalMat);
+    handlebar.position.set(0.65, 0.95, 0);
+    bikeGroup.add(handlebar);
+
+    const basket = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.26, 0.4), toonMat(0x747d8c));
+    basket.position.set(0.82, 0.85, 0);
+    bikeGroup.add(basket);
+
+    const kickstand = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4), bikeMetalMat);
+    kickstand.rotation.z = 0.4;
+    kickstand.position.set(-0.35, 0.2, -0.15);
+    bikeGroup.add(kickstand);
+
+    // 4. Outdoor AC condenser unit with spinning fan
+    const acGroup = new THREE.Group();
+    acGroup.position.set(-7.2, 0.7, -4.6);
+    propsGroup.add(acGroup);
+
+    const acHousing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 1.1), toonMat(0xdfe4ea));
+    acGroup.add(acHousing);
+
+    const grilleMesh = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), toonMat(0x2f3542));
+    grilleMesh.rotation.y = Math.PI / 2;
+    grilleMesh.position.x = 0.28;
+    acGroup.add(grilleMesh);
+
+    const fanGroup = new THREE.Group();
+    fanGroup.position.set(0.26, 0, 0);
+    fanGroup.rotation.y = Math.PI / 2;
+    for (let i = 0; i < 3; i++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.24, 0.02), toonMat(0x747d8c));
+      blade.rotation.z = (i / 3) * Math.PI * 2;
+      fanGroup.add(blade);
+    }
+    acGroup.add(fanGroup);
+
+    // 5. Japanese community bulletin board
+    const bulletinGroup = new THREE.Group();
+    bulletinGroup.position.set(-6.2, 0.24, 2.0);
+    bulletinGroup.rotation.y = 0.1;
+    propsGroup.add(bulletinGroup);
+
+    const postMat = toonMat(0x4a3b32);
+    const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4), postMat);
+    postL.position.set(-0.8, 1.2, 0);
+    bulletinGroup.add(postL);
+
+    const postR = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4), postMat);
+    postR.position.set(0.8, 1.2, 0);
+    bulletinGroup.add(postR);
+
+    const boardFace = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.1, 0.08), toonMat(0x8c6d53));
+    boardFace.position.set(0, 1.6, 0);
+    bulletinGroup.add(boardFace);
+
+    const postersMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 1.0),
+      new THREE.MeshBasicMaterial({ map: bulletinTex })
+    );
+    postersMesh.position.set(0, 1.6, 0.05);
+    bulletinGroup.add(postersMesh);
+
+    const bRoof = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.35), toonMat(0x2f3640));
+    bRoof.position.set(0, 2.2, 0.05);
+    bulletinGroup.add(bRoof);
+
+    const poleGroup = new THREE.Group();
+    poleGroup.position.set(2.4, 0.24, 2.4);
+    propsGroup.add(poleGroup);
+
+    const poleMat = toonMat(0x7e8b8c);
+    const poleMain = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.28, 9.5, 16),
+      poleMat
+    );
+    poleMain.position.y = 4.75;
+    poleMain.castShadow = true;
+    poleGroup.add(poleMain);
+
+    // Metal climbing foot rungs
+    const rungMat = toonMat(0x2a3b4c);
+    for (let h = 1.4; h < 8.5; h += 0.55) {
+      const rung = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, 0.04), rungMat);
+      rung.position.set(h % 1.1 === 0 ? 0.22 : -0.22, h, 0);
+      poleGroup.add(rung);
+    }
+
+    // Cylindrical step-down transformers
+    const transMat = toonMat(0x92a2a3);
+    const trans1 = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1.1, 16), transMat);
+    trans1.position.set(0.42, 6.6, 0.15);
+    poleGroup.add(trans1);
+
+    const trans2 = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.95, 16), transMat);
+    trans2.position.set(-0.38, 7.1, -0.2);
+    poleGroup.add(trans2);
+
+    // Steel crossarms and insulators
+    for (let i = 0; i < 3; i++) {
+      const armH = 7.6 + i * 0.75;
+      const crossarm = new THREE.Mesh(new THREE.BoxGeometry(2.4 - i * 0.3, 0.1, 0.1), rungMat);
+      crossarm.position.set(0, armH, 0);
+      poleGroup.add(crossarm);
+
+      for (let side = -1; side <= 1; side += 2) {
+        const insulator = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.04, 0.06, 0.2, 8),
+          toonMat(0xecf0f1)
+        );
+        insulator.position.set(side * (0.9 - i * 0.1), armH + 0.12, 0);
+        poleGroup.add(insulator);
+      }
+    }
+
+    // Street address sign on pole
+    const streetPlate = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.8, 0.24), toonMat(0x1e3799));
+    streetPlate.position.set(0.24, 2.6, 0);
+    poleGroup.add(streetPlate);
+
+    // 3D Power lines with physical volume using TubeGeometry
+    function createPowerTube(p1, p2, sag) {
+      const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+      mid.y -= sag;
+      const curve = new THREE.QuadraticBezierCurve3(p1, mid, p2);
+      const geom = new THREE.TubeGeometry(curve, 20, 0.022, 6, false);
+      const mat = toonMat(0x10151f);
+      return new THREE.Mesh(geom, mat);
+    }
+
+    propsGroup.add(createPowerTube(
+      new THREE.Vector3(2.4, 8.4, 2.4),
+      new THREE.Vector3(-8.0, 6.2, -6.0),
+      1.1
+    ));
+    propsGroup.add(createPowerTube(
+      new THREE.Vector3(2.4, 7.8, 2.4),
+      new THREE.Vector3(7.5, 6.5, 8.0),
+      0.9
+    ));
+    propsGroup.add(createPowerTube(
+      new THREE.Vector3(2.4, 7.2, 2.4),
+      new THREE.Vector3(-3.8, 4.4, -0.4),
+      0.7
+    ));
+
+    // Street light bracket arm
+    const lampGroup = new THREE.Group();
+    lampGroup.position.set(2.4, 0.24, 0.2);
+    propsGroup.add(lampGroup);
+
+    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.8), toonMat(0x34495e));
+    lampPole.position.y = 2.4;
+    lampGroup.add(lampPole);
+
+    const lampArm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.06), toonMat(0x34495e));
+    lampArm.position.set(0.35, 4.7, 0);
+    lampGroup.add(lampArm);
+
+    const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.25), toonMat(0x2c3e50));
+    lampHead.position.set(0.7, 4.65, 0);
+    lampGroup.add(lampHead);
+
+    const lampEmitter = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.05, 0.2),
+      new THREE.MeshBasicMaterial({ color: 0xffe89e })
+    );
+    lampEmitter.position.set(0.7, 4.58, 0);
+    lampGroup.add(lampEmitter);
+
+    const streetLight = new THREE.PointLight(0xffdd80, 1.8, 7.5, 1.6);
+    streetLight.position.set(0.7, 4.5, 0);
+    streetLight.castShadow = true;
+    lampGroup.add(streetLight);
+
+    // Guard rails & curved safety mirror
+    const guardrailGroup = new THREE.Group();
+    guardrailGroup.position.set(2.7, 0.24, 2.7);
+    propsGroup.add(guardrailGroup);
+
+    const railMat = toonMat(0xecf0f1);
+    for (let a = 0; a <= 2; a++) {
+      const angle = (a / 2) * (Math.PI / 2);
+      const px = -Math.cos(angle) * 1.8;
+      const pz = -Math.sin(angle) * 1.8;
+      const rPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.9), railMat);
+      rPost.position.set(px, 0.45, pz);
+      guardrailGroup.add(rPost);
+    }
+    const upperRail = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.035, 8, 24, Math.PI / 2), railMat);
+    upperRail.rotation.x = Math.PI / 2;
+    upperRail.rotation.z = Math.PI;
+    upperRail.position.y = 0.75;
+    guardrailGroup.add(upperRail);
+
+    const lowerRail = upperRail.clone();
+    lowerRail.position.y = 0.45;
+    guardrailGroup.add(lowerRail);
+
+    // Convex road mirror (orange pole)
+    const mirrorGroup = new THREE.Group();
+    mirrorGroup.position.set(2.6, 0.24, 3.2);
+    propsGroup.add(mirrorGroup);
+
+    const mirrorPole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2), toonMat(0xe67e22));
+    mirrorPole.position.y = 1.6;
+    mirrorGroup.add(mirrorPole);
+
+    const mirrorRim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.08, 24), toonMat(0xd35400));
+    mirrorRim.rotation.x = Math.PI / 2;
+    mirrorRim.rotation.y = -0.4;
+    mirrorRim.position.set(-0.15, 3.0, 0);
+    mirrorGroup.add(mirrorRim);
+
+    const mirrorGlass = new THREE.Mesh(
+      new THREE.SphereGeometry(0.44, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.4),
+      new THREE.MeshStandardMaterial({
+        color: 0x95afc0,
+        metalness: 0.95,
+        roughness: 0.1
+      })
+    );
+    mirrorGlass.rotation.x = -Math.PI / 2;
+    mirrorGlass.position.set(-0.15, 3.0, 0.04);
+    mirrorGroup.add(mirrorGlass);
+
+    // Pedestrian traffic signal
+    const signalGroup = new THREE.Group();
+    signalGroup.position.set(-5.5, 0.24, 2.7);
+    propsGroup.add(signalGroup);
+
+    const sigPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.6), toonMat(0x718093));
+    sigPole.position.y = 1.8;
+    signalGroup.add(sigPole);
+
+    const sigBox = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.75, 0.3), toonMat(0x2f3640));
+    sigBox.position.set(0, 2.8, 0);
+    signalGroup.add(sigBox);
+
+    const redLightMesh = new THREE.Mesh(
+      new THREE.CircleGeometry(0.1, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff3838 })
+    );
+    redLightMesh.position.set(0, 3.0, 0.16);
+    signalGroup.add(redLightMesh);
+
+    const greenLightMesh = new THREE.Mesh(
+      new THREE.CircleGeometry(0.1, 16),
+      new THREE.MeshBasicMaterial({ color: 0x05c46b })
+    );
+    greenLightMesh.position.set(0, 2.62, 0.16);
+    signalGroup.add(greenLightMesh);
+
+    const nightAmbient = new THREE.AmbientLight(0x202b42, 1.15);
+    scene.add(nightAmbient);
+
+    const moonDirectional = new THREE.DirectionalLight(0x5c79a8, 1.25);
+    moonDirectional.position.set(-10, 16, 12);
+    moonDirectional.castShadow = true;
+    moonDirectional.shadow.mapSize.width = 2048;
+    moonDirectional.shadow.mapSize.height = 2048;
+    moonDirectional.shadow.camera.near = 0.5;
+    moonDirectional.shadow.camera.far = 40;
+    moonDirectional.shadow.camera.left = -10;
+    moonDirectional.shadow.camera.right = 10;
+    moonDirectional.shadow.camera.top = 10;
+    moonDirectional.shadow.camera.bottom = -10;
+    moonDirectional.shadow.bias = -0.0008;
+    scene.add(moonDirectional);
+
+    const storeSpillLight = new THREE.SpotLight(0xffbe6b, 2.8, 14, Math.PI / 3, 0.45, 1.2);
+    storeSpillLight.position.set(STORE_X + 1.8, 3.8, STORE_Z + STORE_D / 2);
+    storeSpillLight.target.position.set(STORE_X + 1.8, 0, STORE_Z + STORE_D / 2 + 3.2);
+    scene.add(storeSpillLight);
+    scene.add(storeSpillLight.target);
+
+    const RAIN_COUNT = 1800;
+    const rainPositions = new Float32Array(RAIN_COUNT * 6);
+    const rainVelocities = [];
+
+    const rainBounds = {
+      minX: -9, maxX: 9,
+      minY: 0.1, maxY: 14,
+      minZ: -9, maxZ: 9
+    };
+
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const x = rainBounds.minX + Math.random() * (rainBounds.maxX - rainBounds.minX);
+      const y = rainBounds.minY + Math.random() * (rainBounds.maxY - rainBounds.minY);
+      const z = rainBounds.minZ + Math.random() * (rainBounds.maxZ - rainBounds.minZ);
+      const speed = 14 + Math.random() * 8;
+      const len = 0.35 + Math.random() * 0.25;
+
+      const idx = i * 6;
+      rainPositions[idx] = x;
+      rainPositions[idx + 1] = y;
+      rainPositions[idx + 2] = z;
+      rainPositions[idx + 3] = x - 0.08;
+      rainPositions[idx + 4] = y - len;
+      rainPositions[idx + 5] = z + 0.05;
+
+      rainVelocities.push({ x: -2.0, y: -speed, z: 1.2, len: len });
+    }
+
+    const rainGeometry = new THREE.BufferGeometry();
+    rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+
+    const rainMaterial = new THREE.LineBasicMaterial({
+      color: 0xa4ccee,
+      transparent: true,
+      opacity: 0.52,
+      linewidth: 1
+    });
+
+    const rainLines = new THREE.LineSegments(rainGeometry, rainMaterial);
+    scene.add(rainLines);
+
+    // Roof drip droplets
+    const DRIP_COUNT = 16;
+    const drips = [];
+    const dripGeom = new THREE.BufferGeometry();
+    const dripPositions = new Float32Array(DRIP_COUNT * 3);
+
+    for (let i = 0; i < DRIP_COUNT; i++) {
+      const edgeX = (STORE_X - 3.2) + Math.random() * 6.4;
+      const edgeZ = STORE_Z + STORE_D / 2 + 1.45;
+      const startY = STORE_H + 0.1;
+      drips.push({
+        x: edgeX,
+        y: startY,
+        z: edgeZ,
+        startY: startY,
+        speed: 4.5 + Math.random() * 3.5,
+        delay: Math.random() * 2.0
+      });
+      dripPositions[i * 3] = edgeX;
+      dripPositions[i * 3 + 1] = startY;
+      dripPositions[i * 3 + 2] = edgeZ;
+    }
+
+    dripGeom.setAttribute('position', new THREE.BufferAttribute(dripPositions, 3));
+    const dripMat = new THREE.PointsMaterial({
+      color: 0xcde8ff,
+      size: 0.12,
+      transparent: true,
+      opacity: 0.75
+    });
+    const dripPoints = new THREE.Points(dripGeom, dripMat);
+    scene.add(dripPoints);
+
+    const clock = new THREE.Clock();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      const elapsed = clock.getElapsedTime();
+
+      // 1. Rain streaks motion
+      const posAttr = rainGeometry.attributes.position;
+      const pArr = posAttr.array;
+
+      for (let i = 0; i < RAIN_COUNT; i++) {
+        const idx = i * 6;
+        const v = rainVelocities[i];
+
+        pArr[idx + 1] += v.y * delta;
+        pArr[idx] += v.x * delta;
+        pArr[idx + 2] += v.z * delta;
+
+        pArr[idx + 4] = pArr[idx + 1] - v.len;
+        pArr[idx + 3] = pArr[idx] - 0.08;
+        pArr[idx + 5] = pArr[idx + 2] + 0.05;
+
+        if (pArr[idx + 1] < 0.05 || pArr[idx] < rainBounds.minX || pArr[idx + 2] > rainBounds.maxZ) {
+          pArr[idx] = rainBounds.minX + Math.random() * (rainBounds.maxX - rainBounds.minX);
+          pArr[idx + 1] = rainBounds.maxY;
+          pArr[idx + 2] = rainBounds.minZ + Math.random() * (rainBounds.maxZ - rainBounds.minZ);
+          pArr[idx + 4] = pArr[idx + 1] - v.len;
+          pArr[idx + 3] = pArr[idx] - 0.08;
+          pArr[idx + 5] = pArr[idx + 2] + 0.05;
+        }
+      }
+      posAttr.needsUpdate = true;
+
+      // 2. Roof drip drops
+      const dPosArr = dripGeom.attributes.position.array;
+      for (let i = 0; i < DRIP_COUNT; i++) {
+        const d = drips[i];
+        if (d.delay > 0) {
+          d.delay -= delta;
+          continue;
+        }
+        d.y -= d.speed * delta;
+        if (d.y <= 0.25) {
+          d.y = d.startY;
+          d.delay = 0.4 + Math.random() * 1.5;
+        }
+        dPosArr[i * 3 + 1] = d.y;
+      }
+      dripGeom.attributes.position.needsUpdate = true;
+
+      // 3. Puddle ripple expansion
+      puddles.forEach(p => {
+        p.progress += delta * p.speed;
+        if (p.progress > 1.0) {
+          p.progress = 0;
+        }
+        const s = THREE.MathUtils.lerp(0.1, p.maxRadius, p.progress);
+        p.mesh.scale.set(s, s, s);
+        p.mesh.material.opacity = (1.0 - p.progress) * 0.55;
+      });
+
+      // 4. Automatic door sliding sequence
+      const doorCycleTime = (elapsed * 0.7) % 8.0;
+      let doorSlide = 0;
+      if (doorCycleTime < 1.4) {
+        doorSlide = THREE.MathUtils.smoothstep(doorCycleTime, 0, 1.4) * 0.85;
+      } else if (doorCycleTime < 3.8) {
+        doorSlide = 0.85;
+      } else if (doorCycleTime < 5.2) {
+        doorSlide = (1.0 - THREE.MathUtils.smoothstep(doorCycleTime, 3.8, 5.2)) * 0.85;
+      } else {
+        doorSlide = 0.0;
+      }
+      doorL.position.x = -0.55 - doorSlide;
+      doorR.position.x = 0.55 + doorSlide;
+
+      // 5. Spin AC compressor fan
+      fanGroup.rotation.z += 0.25;
+
+      // 6. Signage breathing and lighting pulse
+      const breathe = Math.sin(elapsed * 2.2) * 0.06;
+      frontSign.material.color.setScalar(0.96 + breathe);
+      interiorCoreLight.intensity = 2.3 + Math.sin(elapsed * 4.0) * 0.08;
+
+      // 7. Pedestrian signal blink
+      const blinkGreen = (Math.sin(elapsed * 3.5) > 0.1);
+      greenLightMesh.visible = blinkGreen;
+      redLightMesh.visible = !blinkGreen;
+
+      if (controls) {
+        controls.update();
+      }
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
